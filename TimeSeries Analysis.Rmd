@@ -1,0 +1,338 @@
+---
+title: "TIME SERIES ANALYSIS"
+author: "DENNIS MULUMBI KYALO"
+date: "04-12-2022"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '5'
+geometry: left=1.3cm,right=1.3cm,top=1cm,bottom=2cm
+monofont: "Times New Roman"
+fontsize: 12pt
+header-includes:
+ \usepackage{booktabs}
+ \usepackage{sectsty} \sectionfont{\centering}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo       =  FALSE,
+    message    =  FALSE,
+    warning    =  FALSE,
+    out.width  =  "100%",
+    out.height =  "300px",
+    fig.pos    =  "center",
+    dpi        =  300, 
+    comment    =  NA)
+
+```
+
+
+```{r Libraries}
+
+library(tidyverse)
+library(skimr)
+library(readxl)
+library(broom)
+library(forcats)
+library(tinytex)
+library(lubridate)
+
+library(tidyquant)
+library(recipes)
+library(data.table)
+library(tseries)
+library(forecast)
+library(printr)
+library(feasts)
+
+# Visualization
+library(ggfx)
+library(tsibble)
+library(gganimate)
+library(httr)
+library(patchwork)
+library(tigris)
+library(sf)
+library(feasts)
+
+```
+
+\newpage
+# PART A 
+
+**1. Explain Autocorrelation and Partial Autocorrelation in the case of Time Series?**\
+      Autocorrelation is obtained by computing the correlation between time series measurements taken at different points in time.\
+      Partial autocorrelation refers to the association between observations in a time series       and observations at preceding time steps (or lags).The partial autocorrelation statistic       shows just the relationship between the two observations that are not explained by the        shorter time lags between those observations.\
+
+
+**2. Why does a Time Series require to be Stationary?**\
+     A stationary time series is one whose features are independent of the observation time, i.e., the mean, variance, autocorrelation, and other statistical features remain constant over time. This is useful because stationarity is a fundamental element in the area of time series analysis, and it has a significant impact on how data is viewed and forecasted. Time series models, which are used to forecast or predict the future, assume that each point is independent of the previous point.
+
+**What test do we use to confirm if the Time Series is stationary?** \
+We use the Augmented Dickey–Fuller test (ADF). 
+
+**What are the Null Hypothesis and Alternative Hypothesis considered in that test?**\
+The Null Hypothesis for this test is that a unit root exists.\
+The Alternative Hypothesis for this test is that the time series is stationary.\
+
+**3. What are the criteria we use to compare ARIMA models?**\
+We can use the following comparison criteria:\
+    1. Akaike Information Criterion (AIC).\
+    2. Bayesian Information Criteria (BIC).\
+    3. The Corrected Akaike Information Criteria (AICc).
+
+The lower the test statistic, the the better the model fits the data.\
+
+**4. Explain ARIMAx with all its components.**\
+The Autoregressive Integrated Moving Average with Explanatory Variable (ARIMAX) model is a more advanced variant of the ARIMA model. The model simply includes the covariate on the right-hand side of the equation, as follows:
+$$\boldsymbol{y_t = \beta  x_t + \phi_1  y_{t-1}  + ...+\phi  y_{t-p}-\theta_1  z_{t-1}-...- \theta_q  z_{t-q}+ z_t}$$ 
+
+Where $\boldsymbol x_t$ is a covariate at time $\boldsymbol t$ and $\boldsymbol \beta$ is its coefficient.\
+
+**5. Discuss Simple Moving Average, Cumulative Moving Average, and Exponential Moving Average.**\
+A simple moving average (SMA) is an arithmetic moving average calculated by adding the price of an instrument over a number of time periods and then dividing the sum by the number of time periods.
+
+The Cumulative Moving Average (CMA) is defined as the unweighted mean of all prior values up to the present period (t).
+
+An exponential moving average (EMA) is a kind of moving average (MA) that assigns a larger weight and relevance to the most recent data points, allowing the data to adapt faster to new information.
+
+
+\newpage
+# PART B
+
+## Section 1 : Plastic Sales Data
+
+```{r read_data}
+
+plastics <- fread("data/plastics.csv")
+plastics_tbl <- plastics %>%
+  separate(col  = date,
+           into = c("Year", "Month"),
+           sep  = " ") %>%
+  mutate(Year   = as.numeric(Year),
+         day    = 01) %>%
+  unite("date", c(Year, Month, day), sep = "-") %>%
+  mutate(date   = ymd(date))
+
+skim_without_charts(plastics_tbl)
+
+```
+The plastic sales data is a time series data consisting of two columns, the date and sales variables. The time period starts from January 1995 to December 1999. 
+
+
+```{r out.height="300px", out.width="100%"}
+plastics_ts <- ts(plastics_tbl %>% select(sale))
+
+plastics_tbl <- plastics %>%
+  separate(col  = date,
+           into = c("Year", "Month"),
+           sep  = " ") %>%
+  mutate(Year   = as.numeric(Year),
+         day    = 01) %>% 
+  
+  unite("date", c(Year, Month, day), sep = "-") %>% 
+  
+  mutate(date   = ymd(date)) %>% 
+  mutate(year   = year(date), 
+         month  = lubridate::month(date, label = TRUE))
+
+
+plastics_tbl %>% filter(!is.na(sale)) %>%
+  ggplot(aes(x = date, y = sale)) +
+  with_outer_glow(geom_line(), colour = "dodgerblue", sigma = 1) +
+  theme_tq() +
+  theme(panel.grid.minor.x = element_blank()) +
+  geom_vline(
+    xintercept = as.numeric(plastics_tbl$date[yday(plastics_tbl$date) == 1]),
+    colour     = "#C40003",
+    linetype   = "twodash",
+    size       = 1
+  ) +
+  scale_x_date(date_breaks = "3 month",
+               date_labels = "%b",
+               expand      = c(0, 0)) +
+  theme(axis.text.x  = element_text(angle = 45)) +
+  theme(plot.caption = element_text(hjust = 0)) +
+  labs(
+    title    =  "Plastic Sales Time Series",
+    subtitle = "Increase in plastic sales from May to September",
+    y        = "Sales",
+    x        = ""
+  ) +
+  scale_y_continuous(labels = scales::dollar_format())
+
+```
+
+```{r out.height="300px", out.width="100%"}
+
+plastics_tbl %>% mutate(year = forcats::fct_rev(forcats::as_factor(year))) %>% filter(!is.na(sale)) %>%
+  ggplot(aes(
+    x     = month,
+    y     = sale,
+    group = year,
+    color = year
+  )) +
+  geom_line(size = 1) +
+  theme_tq() +
+  scale_color_manual(values = c("#2C3E50", "#E31A1C", "#18BC9C",  "#A6CEE3",   "#CCBE93")) +
+  
+  labs(
+    color    = "Year",
+    title    = "Yearly Time Series Plot",
+    subtitle = "Increase in plastic sales in each year",
+    x        = "",
+    y        = "Sales"
+  ) +
+  
+  scale_y_continuous(label = scales::dollar_format()) +
+  theme(legend.position    = "bottom")
+
+```
+
+We can evidently see an increase in plastic sales each year. It is also evident that most of the sales take place starting from the month of May to around October. It may be anticipated that the majority of these sales take place during the summer months and that the number of sales begins to fall from October until roughly March of the following year, which is during the winter season of the year.
+
+\newpage
+The autocorrelation and partial autocorrelation plots.
+
+```{r out.height="100%", out.width="100%"}
+
+tsdisplay(ts(plastics_tbl %>% filter(!is.na(sale)) %>% select(sale)), main = "ACF and PACF Plots")
+
+```
+
+We can notice a spike in the twelfth lag on the autocorrelation plot, which corresponds to a positive correlation. This clearly demonstrates that the majority of the correlations occur on an annual basis, from the same month of one year to the next. When it comes to the sixth lag, there is a significant negative correlation; this is true because there are either less sales or more sales during the sixth lag, depending on the month's seasonality i.e. the month of June has higher sales of plastic as compared to the month of December, which is the sixth lag, sales at this time period are at their lowest. 
+
+\newpage
+## Section 2 : Electricity Data
+
+```{r load_data}
+electric <- fread("data/usmelec.csv")
+electric_tbl <- electric %>% as_tibble() %>%
+  separate(col  = index,
+           into = c("Year", "Month"),
+           sep  = " ") %>%
+  mutate(value  = ifelse(is.na(value), 0, value)) %>%
+  mutate(Year   = as.numeric(Year),
+         day    = 01) %>%
+  
+  unite("date", c(Year, Month, day), sep = "-") %>%
+  
+  mutate(date   = ymd(date))
+
+skim_without_charts(electric_tbl)
+
+```
+
+The electricity data is a time-series data containing two columns, date and value. The dataset starts from January 1973 to June 2013.
+
+### 2a. Stationarity
+
+We use the  Augmented Dickey–Fuller test (ADF) to test for stationarity. 
+The test hypothesis for this test is: \
+$H_o$ : The unit root exists\
+$H_1$ The time series is stationary
+
+
+```{r adf_test}
+
+electric_ts <- ts(electric_tbl %>% select(value))
+adf.test(electric_ts)
+
+```
+
+Since the p-value (0.01) is less than the significance level of significance 0.05, we reject the Null Hypothesis and conclude that the time series is stationary. 
+Therefore, no differencing is required.
+
+```{r acf_pacf_plots,out.height="100%", out.width="100%"}
+
+tsdisplay(electric_ts, main = "ACF and PACF Plots")
+
+```
+
+Based on the autocorrelation plot, we can evidently see that there are no correlations between time lags hence supporting the Augmented Dickey Fuller test that the data is stationary.
+
+### 2b. ARIMA models
+
+We shall now be using different ARIMA models that would be useful in describing the time series. We shall try to tweak the values of p (the number of autoregressive terms), d (differencing), and q (the Moving Average lags).
+
+```{r Models}
+
+
+fit_arima1 <- arima(electric_ts, order = c(2, 0, 3))
+fit_arima2 <- arima(electric_ts, order = c(4, 1, 1))
+fit_arima3 <- arima(electric_ts, order = c(2, 1, 2))
+fit_arima4 <- arima(electric_ts, order = c(5, 1, 2))
+fit_arima5 <- arima(electric_ts, order = c(3, 2, 1))
+
+r1 <- glance(fit_arima1)
+r2 <- glance(fit_arima2)
+r3 <- glance(fit_arima3)
+r4 <- glance(fit_arima4)
+r5 <- glance(fit_arima5)
+
+models <- c("Arima (2, 0, 3)",
+            "Arima (4, 1, 1)",
+            "Arima (2, 1, 2)",
+            "Arima (5, 1, 2)",
+            "Arima (3, 2, 1)")
+
+rbind(r1, r2, r3, r4, r5) %>% 
+  cbind(models) %>% 
+  as_tibble() %>% 
+  select(models, AIC, BIC, everything()) %>% 
+  arrange(AIC) %>% knitr::kable(caption = "ARIMA Models Test Statistics")
+
+```
+
+Arima (5,1,2) model had the least AIC and BIC values of 4150.884 and 4184.357, respectively, thus making it the most suitable model for forecasting our dataset. The table above also shows the other models that were tested with their significant results.
+
+### 2c. Model residuals
+We now estimate the parameters of our best model and do diagnostic testing on the residuals.
+
+```{r model_parameters}
+
+tidy(fit_arima4) %>% 
+  as_tibble() %>% 
+  knitr::kable(caption = "Arima (5,1,2) Parameters")
+
+```
+
+The table above shows Arima (5,1,2) parameters that will then be used to forecast our dataset.
+
+
+```{r residuals, out.height="100%", out.width="100%"}
+
+checkresiduals(fit_arima4)
+
+```
+
+We use the Ljung-Box test to test for our model fit. 
+The test hypothesis for this test is: \
+$H_o$ : The residuals are independently distributed.\
+$H_1$ : The residuals are not independently distributed; they exhibit serial correlation.
+
+Since the p-value (2.2e-16) is less than the level of significance of 0.05, we, therefore, reject the Null Hypothesis and conclude that the residuals are not independently distributed; hence they exhibit serial correlation. 
+
+### 2d. Forecasting
+```{r forecasting}
+
+arima_forecast <- forecast(fit_arima4, h = 180)
+autoplot(arima_forecast)
+
+
+```
+
+### 2e. Intervals
+
+A common feature of prediction intervals is that they increase in length as the forecast horizon increases. The further ahead we forecast, the more uncertainty is associated with the forecast, and thus the wider the prediction intervals.
+
+\newpage
+# REFERENCES
+
+James, G., Witten, D., Hastie, T., & Tibshirani, R. (2013). An introduction to statistical learning (Vol. 112, p. 18). New York: springer.
+
+Hyndman, R. J., & Khandakar, Y. (2008). Automatic time series forecasting: the forecast package for R. Journal of statistical software, 27, 1-22.
+
+Cryer, J. D., & Chan, K. S. (2008). Time series analysis: with applications in R (Vol. 2). New York: Springer.
+
